@@ -9,17 +9,12 @@ set -e
 CONFIG_DIR="./config"
 ENV_FILE=".env"
 
-# --- Gather Domain --- 
-DOMAIN_ARG=$1 # Capture the first argument passed to nm-prepare.sh
-
+# --- Gather Domain (from $1 or prompt) ---
+DOMAIN_ARG=$1
 if [ -n "$DOMAIN_ARG" ]; then
     DOMAIN="$DOMAIN_ARG"
-    echo "Using DOMAIN from command-line argument: $DOMAIN"
-elif [ -n "$NM_DOMAIN" ]; then
-    DOMAIN="$NM_DOMAIN"
-    echo "Using DOMAIN from environment variable NM_DOMAIN: $DOMAIN"
+    echo "Using DOMAIN from argument: $DOMAIN"
 else
-    # Fallback to interactive prompt ONLY if not provided by arg or env var
     read -p "Enter the domain for Netmaker (e.g., yourdomain.com): " DOMAIN
     if [ -z "$DOMAIN" ]; then
         echo "Error: Domain is required." >&2
@@ -27,13 +22,17 @@ else
     fi
 fi
 
-# --- Gather Master Key --- 
-MASTER_KEY_PLACEHOLDER="TODO_REPLACE_MASTER_KEY"
-if [ -n "$NM_MASTER_KEY" ] && [ "$NM_MASTER_KEY" != "$MASTER_KEY_PLACEHOLDER" ]; then
-    MASTER_KEY="$NM_MASTER_KEY"
-    echo "Using MASTER_KEY from environment variable NM_MASTER_KEY."
+# --- Gather Master Key (from $2 or prompt/auto-generate) ---
+MASTER_KEY_ARG=$2
+if [ -n "$MASTER_KEY_ARG" ]; then
+    if [ "${#MASTER_KEY_ARG}" -lt 16 ]; then
+        echo "Error: MASTER_KEY provided as argument must be at least 16 characters long." >&2
+        exit 1
+    fi
+    MASTER_KEY="$MASTER_KEY_ARG"
+    echo "Using MASTER_KEY from argument."
 else
-    echo "Netmaker MASTER_KEY is not set via NM_MASTER_KEY or is the default placeholder."
+    echo "MASTER_KEY not provided as an argument."
     read -p "Enter a new MASTER_KEY (at least 16 chars, leave blank to auto-generate): " user_master_key
     if [ -n "$user_master_key" ]; then
         if [ "${#user_master_key}" -lt 16 ]; then
@@ -43,7 +42,7 @@ else
         MASTER_KEY="$user_master_key"
         echo "Using user-provided MASTER_KEY."
     else
-        MASTER_KEY=$(openssl rand -hex 32) # Generate a 64-character hex key
+        MASTER_KEY=$(openssl rand -hex 32)
         echo "Auto-generated a new MASTER_KEY: $MASTER_KEY"
     fi
     echo "----------------------------------------------------------------------"
@@ -80,54 +79,55 @@ mkdir -p "$CONFIG_DIR/xray/ssl"
 mkdir -p "$CONFIG_DIR/ssl" # For Nginx certs
 
 # --- Generate Xray configuration if it doesn't exist ---
-XRAY_CONFIG_FILE="$CONFIG_DIR/xray/config.json"
-if [ ! -f "$XRAY_CONFIG_FILE" ]; then
-    echo "Creating Xray configuration: $XRAY_CONFIG_FILE..."
+XRAY_CONFIG_FILE_TOML="$CONFIG_DIR/xray/config.toml"
+# Also remove old json if present to avoid conflict
+rm -f "$CONFIG_DIR/xray/config.json"
+
+if [ ! -f "$XRAY_CONFIG_FILE_TOML" ]; then
+    echo "Creating Xray TOML configuration: $XRAY_CONFIG_FILE_TOML..."
     XRAY_CLIENT_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
-    cat << EOF > "$XRAY_CONFIG_FILE"
-{
-  "log": {
-    "loglevel": "warning"
-  },
-  "inbounds": [
-    {
-      "port": ${XRAY_PORT:-443}, # Will be substituted by Xray itself from its env or default 443
-      "protocol": "vless",
-      "settings": {
-        "clients": [
-          {
-            "id": "$XRAY_CLIENT_ID",
-            "flow": "xtls-rprx-direct"
-          }
-        ],
-        "decryption": "none",
-        "fallbacks": []
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "alpn": ["http/1.1"],
-          "certificates": [
-            {
-              "certificateFile": "/etc/xray/ssl/server.crt",
-              "keyFile": "/etc/xray/ssl/server.key"
-            }
-          ]
-        }
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom"
-    }
-  ]
-}
+    # Note: XRAY_PORT from .env is for docker-compose port mapping.
+    # Xray itself reads the port from its config or defaults to what its VLESS settings imply (usually 443 for TLS).
+    # Here, we explicitly set the listen port in the TOML to 443 for clarity.
+    cat << EOF > "$XRAY_CONFIG_FILE_TOML"
+# Xray main configuration file (TOML format)
+
+[log]
+loglevel = "warning"
+
+[[inbounds]]
+port = 443 # Xray service listening port inside the container
+protocol = "vless"
+[inbounds.settings]
+decryption = "none"
+  [[inbounds.settings.clients]]
+  id = "$XRAY_CLIENT_ID"
+  flow = "xtls-rprx-direct"
+  # email = "user@example.com" # Optional client identifier
+
+[[inbounds.streamSettings]]
+network = "tcp"
+security = "tls"
+  [inbounds.streamSettings.tlsSettings]
+  alpn = ["http/1.1"]
+  [[inbounds.streamSettings.tlsSettings.certificates]]
+  certificateFile = "/etc/xray/ssl/server.crt"
+  keyFile = "/etc/xray/ssl/server.key"
+
+# Example fallback if needed (e.g., to a local web server if TLS handshake fails for VLESS)
+# [[inbounds.settings.fallbacks]]
+# alpn = "h2" # or mKCP or ...
+# dest = 8080 # Redirect to this port on localhost
+
+[[outbounds]]
+protocol = "freedom"
+# tag = "direct" # Optional tag
+
+# Other common sections like routing, policy, dns, transport can be added here as needed.
 EOF
     echo "Default Xray client ID: $XRAY_CLIENT_ID"
 else
-    echo "Xray configuration $XRAY_CONFIG_FILE already exists. Skipping creation."
+    echo "Xray TOML configuration $XRAY_CONFIG_FILE_TOML already exists. Skipping creation."
 fi
 
 # --- Generate TLS certificates for Xray if they don't exist ---
@@ -268,5 +268,6 @@ $RUNTIME pull docker.io/gravitl/netmaker-ui:latest
 $RUNTIME pull docker.io/eclipse-mosquitto:2.0-openssl
 $RUNTIME pull docker.io/nginx:latest
 
-echo "Preparation complete. All required files and directories are in place."
-echo "You can now run nm-setup.sh to start the services." 
+echo "Preparation complete. Host directories and configuration files are ready under $CONFIG_DIR."
+echo "The .env file has been created/updated with your domain and master key."
+echo "You can now run 'docker-compose up -d' or 'podman-compose up -d'." 

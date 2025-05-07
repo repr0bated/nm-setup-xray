@@ -38,11 +38,49 @@ echo "Preliminary cleanup attempt finished."
 
 SCRIPT_DIR_SETUP=$(dirname "$0")
 
-# 1. Run preparation script to create .env, configs, and certs
+# 1. Determine DOMAIN and MASTER_KEY for this setup session
+SETUP_DOMAIN=$1 # Domain comes from the first argument to nm-setup.sh
+if [ -z "$SETUP_DOMAIN" ]; then
+    # This case should ideally be caught by nm-install.sh or direct user call validation
+    # but as a fallback if nm-setup.sh is called directly without a domain:
+    read -p "Enter the domain for Netmaker (e.g., yourdomain.com): " SETUP_DOMAIN
+    if [ -z "$SETUP_DOMAIN" ]; then
+        echo "Error: Domain is required for setup." >&2
+        exit 1
+    fi
+fi
+
+# Master Key handling logic (similar to what was in nm-setup.sh before for containers)
+MASTER_KEY_PLACEHOLDER="TODO_REPLACE_MASTER_KEY"
+SETUP_MASTER_KEY="${NM_MASTER_KEY:-$MASTER_KEY_PLACEHOLDER}" # Read from env var NM_MASTER_KEY, fallback to placeholder
+
+if [ "$SETUP_MASTER_KEY" = "$MASTER_KEY_PLACEHOLDER" ]; then
+  echo "WARNING: The default Netmaker MASTER_KEY is insecure or not set via NM_MASTER_KEY."
+  read -p "Enter a new MASTER_KEY for Netmaker (at least 16 chars, leave blank to auto-generate): " user_master_key
+  if [ -n "$user_master_key" ]; then
+    if [ "${#user_master_key}" -lt 16 ]; then
+      echo "Error: MASTER_KEY must be at least 16 characters long." >&2
+      exit 1
+    fi
+    SETUP_MASTER_KEY="$user_master_key"
+    echo "Using user-provided MASTER_KEY for this session."
+  else
+    SETUP_MASTER_KEY=$(openssl rand -hex 32) # Generate a 64-character hex key
+    echo "Auto-generated a new MASTER_KEY for this session: $SETUP_MASTER_KEY"
+  fi
+  echo "----------------------------------------------------------------------"
+  echo "IMPORTANT: Netmaker MASTER_KEY for this session: $SETUP_MASTER_KEY"
+  echo "This will be written to the .env file by nm-prepare.sh."
+  echo "Please ensure it is saved if it was auto-generated and you need it later."
+  echo "----------------------------------------------------------------------"
+else
+  echo "Using MASTER_KEY from environment variable NM_MASTER_KEY for this session."
+fi
+
+# Call preparation script, passing determined DOMAIN and MASTER_KEY
 echo "Running preparation script..."
 if [ -f "$SCRIPT_DIR_SETUP/nm-prepare.sh" ]; then
-    # Pass current environment variables, so NM_DOMAIN and NM_MASTER_KEY can be used if set
-    env NM_DOMAIN="$NM_DOMAIN" NM_MASTER_KEY="$NM_MASTER_KEY" bash "$SCRIPT_DIR_SETUP/nm-prepare.sh"
+    bash "$SCRIPT_DIR_SETUP/nm-prepare.sh" "$SETUP_DOMAIN" "$SETUP_MASTER_KEY"
 else
     echo "Error: nm-prepare.sh not found in $SCRIPT_DIR_SETUP. Cannot proceed." >&2
     exit 1

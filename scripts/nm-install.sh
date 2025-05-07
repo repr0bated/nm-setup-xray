@@ -27,9 +27,20 @@ echo "Installing Netmaker with Xray using scripts from $REPO_USER/$REPO_NAME..."
 
 # Download required scripts to temporary directory
 echo "Downloading scripts into $TMP_DIR..."
-for script in nm-prepare.sh nm-setup.sh nm-join.sh nm-persist.sh nm-routes.sh nm-cleanup.sh; do
+for script in nm-setup.sh nm-join.sh nm-persist.sh nm-routes.sh nm-cleanup.sh; do
     echo "Downloading $script..."
     curl -sfL "$BASE_URL/$script" -o "$TMP_DIR/$script"
+    # Also download nm-prepare.sh as it's needed by nm-setup.sh in the same directory
+    if [ "$script" = "nm-setup.sh" ]; then
+        echo "Downloading nm-prepare.sh (dependency for nm-setup.sh)..."
+        curl -sfL "$BASE_URL/nm-prepare.sh" -o "$TMP_DIR/nm-prepare.sh"
+        if [ ! -f "$TMP_DIR/nm-prepare.sh" ]; then
+            echo "ERROR: Failed to download nm-prepare.sh dependency" >&2
+            exit 1
+        fi
+        chmod +x "$TMP_DIR/nm-prepare.sh"
+    fi
+
     if [ ! -f "$TMP_DIR/$script" ]; then
         echo "ERROR: Failed to download $script from $BASE_URL/$script" >&2
         exit 1
@@ -38,19 +49,13 @@ for script in nm-prepare.sh nm-setup.sh nm-join.sh nm-persist.sh nm-routes.sh nm
 done
 
 echo "Downloaded scripts:
-ls -l $TMP_DIR"
+$(ls -l $TMP_DIR)"
 
 # Change to the temporary directory to ensure relative paths work
 cd "$TMP_DIR"
 
-# Run preparation script
-echo "Running preparation script..."
-# Now that we are in TMP_DIR, ./nm-prepare.sh should work
-./nm-prepare.sh "$DOMAIN"
-
-# Run setup script
+# Run setup script (which will call nm-prepare.sh itself)
 echo "Running setup script..."
-# Similarly, ./nm-setup.sh should work
 ./nm-setup.sh "$DOMAIN" "$SERVER_PORT" "$BROKER_PORT" "$DASHBOARD_PORT"
 
 cd -
