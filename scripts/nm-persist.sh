@@ -55,7 +55,7 @@ EOF
 done
 
 # Get route sync script
-curl -sfL --create-dirs -O --output-dir $NETMAKER_DIR https://raw.githubusercontent.com/agorgl/nm-setup/master/scripts/nm-routes.sh
+curl -sfL --create-dirs -O --output-dir $NETMAKER_DIR https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/scripts/nm-routes.sh
 chmod a+x $NETMAKER_DIR/nm-routes.sh
 
 # Create runtime specific routes script
