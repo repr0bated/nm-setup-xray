@@ -11,7 +11,16 @@ Helper scripts to deploy Netmaker infrastructure with Xray Core in Docker or Pod
 - Persistence support for systemd
 - Route synchronization between containers
 
-## Usage
+## Quick Installation
+
+One-line installation command:
+```
+curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/scripts/nm-install.sh | sudo bash -s - <DOMAIN>
+```
+
+Replace `<DOMAIN>` with your domain name.
+
+## Manual Installation
 
 ### Prerequisites
 
@@ -19,12 +28,12 @@ Helper scripts to deploy Netmaker infrastructure with Xray Core in Docker or Pod
 - Root access (for some operations)
 - Basic knowledge of networking
 
-### Installation
+### Installation Steps
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/nm-setup.git
-   cd nm-setup
+   git clone https://github.com/repr0bated/nm-setup-xray.git
+   cd nm-setup-xray
    ```
 
 2. Run the setup script:
@@ -44,6 +53,7 @@ Helper scripts to deploy Netmaker infrastructure with Xray Core in Docker or Pod
 
 ## Script Descriptions
 
+- **nm-install.sh**: All-in-one installation script (for curl installation)
 - **nm-prepare.sh**: Prepares the environment, configurations, and pulls images
 - **nm-setup.sh**: Deploys the complete Netmaker infrastructure with Xray
 - **nm-join.sh**: Helps clients join Netmaker networks
