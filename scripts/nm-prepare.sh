@@ -207,10 +207,10 @@ fi
 # Pull necessary images
 echo "Pulling required container images..."
 $RUNTIME pull ghcr.io/xtls/xray-core:sha-59aa5e1-ls
-$RUNTIME pull gravitl/netmaker:latest
-$RUNTIME pull gravitl/netmaker-ui:latest
-$RUNTIME pull eclipse-mosquitto:2.0-openssl
-$RUNTIME pull nginx
+$RUNTIME pull docker.io/gravitl/netmaker:latest
+$RUNTIME pull docker.io/gravitl/netmaker-ui:latest
+$RUNTIME pull docker.io/eclipse-mosquitto:2.0-openssl
+$RUNTIME pull docker.io/nginx:latest
 
 echo "Preparation complete. All required files and directories are in place."
 echo "You can now run nm-setup.sh to start the services." 

@@ -100,7 +100,7 @@ if [ "$RUNTIME" = "podman" ]; then
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
         --sysctl net.ipv6.conf.all.forwarding=1 \
         --restart unless-stopped \
-        gravitl/netmaker:latest
+        docker.io/gravitl/netmaker:latest
 else
     # Docker version
     $RUNTIME run -d --name netmaker-server \
@@ -125,7 +125,7 @@ else
         --sysctl net.ipv6.conf.all.forwarding=1 \
         --restart unless-stopped \
         --network host \
-        gravitl/netmaker:latest
+        docker.io/gravitl/netmaker:latest
 fi
 
 #
@@ -157,7 +157,7 @@ if [ "$RUNTIME" = "podman" ]; then
         -v netmaker-mq-logs:/mosquitto/log \
         -v netmaker-certs:/mosquitto/certs \
         --restart unless-stopped \
-        eclipse-mosquitto:2.0-openssl
+        docker.io/eclipse-mosquitto:2.0-openssl
 else
     # Docker version
     $RUNTIME run -d --name netmaker-mq \
@@ -167,7 +167,7 @@ else
         -v netmaker-mq-logs:/mosquitto/log \
         -v netmaker-certs:/mosquitto/certs \
         --restart unless-stopped \
-        eclipse-mosquitto:2.0-openssl
+        docker.io/eclipse-mosquitto:2.0-openssl
 fi
 
 #
@@ -180,14 +180,14 @@ if [ "$RUNTIME" = "podman" ]; then
     podman run -d --pod netmaker --name netmaker-ui \
         -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
         --restart unless-stopped \
-        gravitl/netmaker-ui:latest
+        docker.io/gravitl/netmaker-ui:latest
 else
     # Docker version
     $RUNTIME run -d --name netmaker-ui \
         -p $DASHBOARD_PORT:80 \
         -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
         --restart unless-stopped \
-        gravitl/netmaker-ui:latest
+        docker.io/gravitl/netmaker-ui:latest
 fi
 
 #
@@ -289,7 +289,7 @@ if [ "$RUNTIME" = "podman" ]; then
         -v $NMDIR/selfsigned.key:/etc/nginx/ssl/selfsigned.key \
         -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
         --restart unless-stopped \
-        nginx
+        docker.io/nginx:latest
 else
     # Docker version
     $RUNTIME run -d --name netmaker-proxy \
@@ -300,7 +300,7 @@ else
         -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
         --restart unless-stopped \
         --network host \
-        nginx
+        docker.io/nginx:latest
 fi
 
 #
