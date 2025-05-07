@@ -10,10 +10,16 @@ CONFIG_DIR="./config"
 ENV_FILE=".env"
 
 # --- Gather Domain --- 
-if [ -n "$NM_DOMAIN" ]; then
+DOMAIN_ARG=$1 # Capture the first argument passed to nm-prepare.sh
+
+if [ -n "$DOMAIN_ARG" ]; then
+    DOMAIN="$DOMAIN_ARG"
+    echo "Using DOMAIN from command-line argument: $DOMAIN"
+elif [ -n "$NM_DOMAIN" ]; then
     DOMAIN="$NM_DOMAIN"
     echo "Using DOMAIN from environment variable NM_DOMAIN: $DOMAIN"
 else
+    # Fallback to interactive prompt ONLY if not provided by arg or env var
     read -p "Enter the domain for Netmaker (e.g., yourdomain.com): " DOMAIN
     if [ -z "$DOMAIN" ]; then
         echo "Error: Domain is required." >&2
