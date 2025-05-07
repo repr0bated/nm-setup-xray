@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+RUNTIME=${RUNTIME:-podman}  # Set default runtime to podman if not already set
 
 # Arguments
 DOMAIN=$1
