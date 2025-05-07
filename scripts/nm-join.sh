@@ -12,8 +12,20 @@ openssl s_client -showcerts -connect $SERVER </dev/null 2>/dev/null | openssl x5
 # Generate random postfix for container name
 CONTAINER_NAME=netclient-$(openssl rand -hex 4)
 
+# Detect container runtime
+if command -v docker >/dev/null 2>&1; then
+    RUNTIME="docker"
+elif command -v podman >/dev/null 2>&1; then
+    RUNTIME="podman"
+else
+    echo "Error: Neither Docker nor Podman is installed."
+    exit 1
+fi
+
+echo "Using $RUNTIME to join network..."
+
 # Create netclient container
-podman create --name $CONTAINER_NAME \
+$RUNTIME create --name $CONTAINER_NAME \
     -e TOKEN=$TOKEN \
     --cap-add NET_ADMIN \
     --cap-add NET_RAW \
@@ -25,9 +37,11 @@ podman create --name $CONTAINER_NAME \
     gravitl/netclient:latest
 
 # Append certificate to container system certificates
-podman cp $CONTAINER_NAME:/etc/ssl/certs/ca-certificates.crt /tmp/nc-certs.crt
+$RUNTIME cp $CONTAINER_NAME:/etc/ssl/certs/ca-certificates.crt /tmp/nc-certs.crt
 cat $CERT_FILE >> /tmp/nc-certs.crt
-podman cp /tmp/nc-certs.crt $CONTAINER_NAME:/etc/ssl/certs/ca-certificates.crt
+$RUNTIME cp /tmp/nc-certs.crt $CONTAINER_NAME:/etc/ssl/certs/ca-certificates.crt
 
 # Start netclient container
-podman start $CONTAINER_NAME
+$RUNTIME start $CONTAINER_NAME
+
+echo "Network client started as $CONTAINER_NAME"

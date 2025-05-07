@@ -1,17 +1,29 @@
 #!/bin/bash
 
+# Detect container runtime if not set
+if [ -z "$RUNTIME" ]; then
+    if command -v docker >/dev/null 2>&1; then
+        RUNTIME="docker"
+    elif command -v podman >/dev/null 2>&1; then
+        RUNTIME="podman"
+    else
+        echo "Error: Neither Docker nor Podman is installed."
+        exit 1
+    fi
+fi
+
 # Constants
 ROUTING_TABLE=5050
 
 # Gather applicable containers
-containers=$(podman ps --format '{{ .Names }}' | grep 'netmaker-server\|netclient-')
+containers=$($RUNTIME ps --format '{{ .Names }}' | grep 'netmaker-server\|netclient-')
 
 # For each container
 all_routes=""
 for container in $containers; do
     # Get container ip and routes
-    container_ip=$(podman inspect $container -f '{{ .NetworkSettings.IPAddress }}')
-    container_routes=$(podman exec $container ip route | grep nm- | awk '{print $1}' | grep '/' | xargs -r printf "%s:$container_ip\n")
+    container_ip=$($RUNTIME inspect $container -f '{{ .NetworkSettings.IPAddress }}')
+    container_routes=$($RUNTIME exec $container ip route | grep nm- | awk '{print $1}' | grep '/' | xargs -r printf "%s:$container_ip\n")
     all_routes+=$container_routes
 
     # Get existing routes

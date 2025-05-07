@@ -3,9 +3,15 @@ set -e
 
 # Arguments
 DOMAIN=$1
+[ -z "$DOMAIN" ] && echo "Usage: $0 <domain>" && exit 1
+
 SERVER_PORT=${2:-8081}
 BROKER_PORT=${3:-8883}
 DASHBOARD_PORT=${4:-8080}
+
+# Run preparation script first to ensure all files are in place
+echo "Running preparation script..."
+./scripts/nm-prepare.sh $DOMAIN
 
 # Directory containing volume data
 [ "${EUID:-$(id -u)}" -eq 0 ] \
@@ -15,13 +21,28 @@ DASHBOARD_PORT=${4:-8080}
 # Create state directory if not exists
 [ ! -d $NMDIR ] && mkdir -p $NMDIR
 
-# Create empty pod
-echo "Creating netmaker pod ..."
-podman pod create -n netmaker \
-    -p $SERVER_PORT:8443 \
-    -p $BROKER_PORT:8883 \
-    -p $DASHBOARD_PORT:8080 \
-    -p 51821-51830:51821-51830/udp
+# Detect container runtime
+if command -v docker >/dev/null 2>&1; then
+    RUNTIME="docker"
+elif command -v podman >/dev/null 2>&1; then
+    RUNTIME="podman"
+else
+    echo "Error: Neither Docker nor Podman is installed."
+    exit 1
+fi
+
+echo "Using $RUNTIME for deployment..."
+
+# Create empty pod if using podman
+if [ "$RUNTIME" = "podman" ]; then
+    echo "Creating netmaker pod ..."
+    podman pod create -n netmaker \
+        -p $SERVER_PORT:8443 \
+        -p $BROKER_PORT:8883 \
+        -p $DASHBOARD_PORT:8080 \
+        -p 443:443 \
+        -p 51821-51830:51821-51830/udp
+fi
 
 #
 # Server
@@ -29,27 +50,54 @@ podman pod create -n netmaker \
 
 # Launch server
 echo "Creating netmaker-server container ..."
-podman run -d --pod netmaker --name netmaker-server \
-    -v netmaker-data:/root/data \
-    -v netmaker-certs:/etc/netmaker \
-    -e SERVER_NAME=broker.$DOMAIN \
-    -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
-    -e MASTER_KEY=TODO_REPLACE_MASTER_KEY \
-    -e DATABASE=sqlite \
-    -e NODE_ID=netmaker-server \
-    -e MQ_HOST=localhost \
-    -e MQ_PORT=$BROKER_PORT \
-    -e TELEMETRY=off \
-    -e VERBOSITY="3" \
-    --cap-add NET_ADMIN \
-    --cap-add NET_RAW \
-    --cap-add SYS_MODULE \
-    --sysctl net.ipv4.ip_forward=1 \
-    --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-    --sysctl net.ipv6.conf.all.disable_ipv6=0 \
-    --sysctl net.ipv6.conf.all.forwarding=1 \
-    --restart unless-stopped \
-    gravitl/netmaker:latest
+if [ "$RUNTIME" = "podman" ]; then
+    podman run -d --pod netmaker --name netmaker-server \
+        -v netmaker-data:/root/data \
+        -v netmaker-certs:/etc/netmaker \
+        -e SERVER_NAME=broker.$DOMAIN \
+        -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
+        -e MASTER_KEY=TODO_REPLACE_MASTER_KEY \
+        -e DATABASE=sqlite \
+        -e NODE_ID=netmaker-server \
+        -e MQ_HOST=localhost \
+        -e MQ_PORT=$BROKER_PORT \
+        -e TELEMETRY=off \
+        -e VERBOSITY="3" \
+        --cap-add NET_ADMIN \
+        --cap-add NET_RAW \
+        --cap-add SYS_MODULE \
+        --sysctl net.ipv4.ip_forward=1 \
+        --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+        --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+        --sysctl net.ipv6.conf.all.forwarding=1 \
+        --restart unless-stopped \
+        gravitl/netmaker:latest
+else
+    # Docker version
+    $RUNTIME run -d --name netmaker-server \
+        -p $SERVER_PORT:8443 \
+        -v netmaker-data:/root/data \
+        -v netmaker-certs:/etc/netmaker \
+        -e SERVER_NAME=broker.$DOMAIN \
+        -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
+        -e MASTER_KEY=TODO_REPLACE_MASTER_KEY \
+        -e DATABASE=sqlite \
+        -e NODE_ID=netmaker-server \
+        -e MQ_HOST=localhost \
+        -e MQ_PORT=$BROKER_PORT \
+        -e TELEMETRY=off \
+        -e VERBOSITY="3" \
+        --cap-add NET_ADMIN \
+        --cap-add NET_RAW \
+        --cap-add SYS_MODULE \
+        --sysctl net.ipv4.ip_forward=1 \
+        --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+        --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+        --sysctl net.ipv6.conf.all.forwarding=1 \
+        --restart unless-stopped \
+        --network host \
+        gravitl/netmaker:latest
+fi
 
 #
 # Broker
@@ -73,13 +121,25 @@ EOF
 
 # Launch broker
 echo "Creating netmaker-mq container ..."
-podman run -d --pod netmaker --name netmaker-mq \
-    -v $NMDIR/mosquitto.conf:/mosquitto/config/mosquitto.conf \
-    -v netmaker-mq-data:/mosquitto/data \
-    -v netmaker-mq-logs:/mosquitto/log \
-    -v netmaker-certs:/mosquitto/certs \
-    --restart unless-stopped \
-    eclipse-mosquitto:2.0-openssl
+if [ "$RUNTIME" = "podman" ]; then
+    podman run -d --pod netmaker --name netmaker-mq \
+        -v $NMDIR/mosquitto.conf:/mosquitto/config/mosquitto.conf \
+        -v netmaker-mq-data:/mosquitto/data \
+        -v netmaker-mq-logs:/mosquitto/log \
+        -v netmaker-certs:/mosquitto/certs \
+        --restart unless-stopped \
+        eclipse-mosquitto:2.0-openssl
+else
+    # Docker version
+    $RUNTIME run -d --name netmaker-mq \
+        -p $BROKER_PORT:8883 \
+        -v $NMDIR/mosquitto.conf:/mosquitto/config/mosquitto.conf \
+        -v netmaker-mq-data:/mosquitto/data \
+        -v netmaker-mq-logs:/mosquitto/log \
+        -v netmaker-certs:/mosquitto/certs \
+        --restart unless-stopped \
+        eclipse-mosquitto:2.0-openssl
+fi
 
 #
 # UI
@@ -87,10 +147,19 @@ podman run -d --pod netmaker --name netmaker-mq \
 
 # Launch ui
 echo "Creating netmaker-ui container ..."
-podman run -d --pod netmaker --name netmaker-ui \
-    -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
-    --restart unless-stopped \
-    gravitl/netmaker-ui:latest
+if [ "$RUNTIME" = "podman" ]; then
+    podman run -d --pod netmaker --name netmaker-ui \
+        -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
+        --restart unless-stopped \
+        gravitl/netmaker-ui:latest
+else
+    # Docker version
+    $RUNTIME run -d --name netmaker-ui \
+        -p $DASHBOARD_PORT:80 \
+        -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
+        --restart unless-stopped \
+        gravitl/netmaker-ui:latest
+fi
 
 #
 # Reverse Proxy
@@ -124,9 +193,9 @@ http {
     include       /etc/nginx/mime.types;
     default_type  application/octet-stream;
 
-    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
-                      '$status $body_bytes_sent "$http_referer" '
-                      '"$http_user_agent" "$http_x_forwarded_for"';
+    log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '
+                      '\$status \$body_bytes_sent "\$http_referer" '
+                      '"\$http_user_agent" "\$http_x_forwarded_for"';
 
     access_log    /var/log/nginx/access.log  main;
 
@@ -185,9 +254,47 @@ EOF
 
 # Launch reverse proxy
 echo "Creating netmaker-proxy container ..."
-podman run -d --pod netmaker --name netmaker-proxy \
-    -v $NMDIR/nginx.conf:/etc/nginx/nginx.conf:ro \
-    -v $NMDIR/selfsigned.key:/etc/nginx/ssl/selfsigned.key \
-    -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
-    --restart unless-stopped \
-    nginx
+if [ "$RUNTIME" = "podman" ]; then
+    podman run -d --pod netmaker --name netmaker-proxy \
+        -v $NMDIR/nginx.conf:/etc/nginx/nginx.conf:ro \
+        -v $NMDIR/selfsigned.key:/etc/nginx/ssl/selfsigned.key \
+        -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
+        --restart unless-stopped \
+        nginx
+else
+    # Docker version
+    $RUNTIME run -d --name netmaker-proxy \
+        -p 8443:8443 \
+        -p 8080:8080 \
+        -v $NMDIR/nginx.conf:/etc/nginx/nginx.conf:ro \
+        -v $NMDIR/selfsigned.key:/etc/nginx/ssl/selfsigned.key \
+        -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
+        --restart unless-stopped \
+        --network host \
+        nginx
+fi
+
+#
+# Xray
+#
+
+# Launch xray
+echo "Creating netmaker-xray container ..."
+if [ "$RUNTIME" = "podman" ]; then
+    # Using podman with netmaker pod
+    podman run -d --pod netmaker --name netmaker-xray \
+        -v $NMDIR/xray/config.json:/etc/xray/config.json \
+        -v $NMDIR/xray/ssl:/etc/xray/ssl \
+        --restart unless-stopped \
+        ghcr.io/xtls/xray-core:sha-59aa5e1-ls
+else
+    # Docker version
+    $RUNTIME run -d --name netmaker-xray \
+        -p 443:443 \
+        -v $NMDIR/xray/config.json:/etc/xray/config.json \
+        -v $NMDIR/xray/ssl:/etc/xray/ssl \
+        --restart unless-stopped \
+        ghcr.io/xtls/xray-core:sha-59aa5e1-ls
+fi
+
+echo "Setup complete! Netmaker is running with Xray on port 443."
