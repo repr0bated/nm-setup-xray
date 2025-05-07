@@ -11,7 +11,8 @@ DASHBOARD_PORT=${4:-8080}
 
 # Run preparation script first to ensure all files are in place
 echo "Running preparation script..."
-./scripts/nm-prepare.sh $DOMAIN
+SCRIPT_DIR=$(dirname "$0")
+"$SCRIPT_DIR/nm-prepare.sh" $DOMAIN
 
 # Handle Master Key
 MASTER_KEY_PLACEHOLDER="TODO_REPLACE_MASTER_KEY"
