@@ -128,11 +128,11 @@ Example `clients` array with two users:
 ```json
 "clients": [
   {
-    "id": "your-first-auto-generated-uuid", // This was created by the script
+    "id": "your-first-auto-generated-uuid", 
     "flow": "xtls-rprx-direct"
   },
   {
-    "id": "a-new-manually-added-uuid",   // Generate this with uuidgen
+    "id": "a-new-manually-added-uuid",   
     "flow": "xtls-rprx-direct"
   }
 ]
@@ -157,4 +157,4 @@ General Netmaker related configurations (not Xray specific) are stored in:
 
 ## License
 
-MIT License
+MIT License 
