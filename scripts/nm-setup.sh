@@ -13,6 +13,35 @@ DASHBOARD_PORT=${4:-8080}
 echo "Running preparation script..."
 ./scripts/nm-prepare.sh $DOMAIN
 
+# Handle Master Key
+MASTER_KEY_PLACEHOLDER="TODO_REPLACE_MASTER_KEY"
+CURRENT_MASTER_KEY="${NM_MASTER_KEY:-$MASTER_KEY_PLACEHOLDER}" # Read from env var NM_MASTER_KEY, fallback to placeholder
+
+if [ "$CURRENT_MASTER_KEY" = "$MASTER_KEY_PLACEHOLDER" ]; then
+  echo "WARNING: The default Netmaker MASTER_KEY is insecure or not set."
+  echo "You can set it permanently by exporting NM_MASTER_KEY in your shell environment."
+  read -p "Enter a new MASTER_KEY (at least 16 chars, leave blank to auto-generate): " user_master_key
+  if [ -n "$user_master_key" ]; then
+    if [ "${#user_master_key}" -lt 16 ]; then
+      echo "Error: MASTER_KEY must be at least 16 characters long." 
+      exit 1
+    fi
+    MASTER_KEY="$user_master_key"
+    echo "Using user-provided MASTER_KEY."
+  else
+    MASTER_KEY=$(openssl rand -hex 32) # Generate a 64-character hex key
+    echo "Auto-generated a new MASTER_KEY."
+  fi
+  echo "----------------------------------------------------------------------"
+  echo "IMPORTANT: Your Netmaker MASTER_KEY is: $MASTER_KEY"
+  echo "Please SAVE THIS KEY in a secure location. It is crucial for server"
+  echo "recovery or if you need to redeploy your Netmaker server."
+  echo "----------------------------------------------------------------------"
+else
+  MASTER_KEY="$CURRENT_MASTER_KEY"
+  echo "Using MASTER_KEY from environment variable NM_MASTER_KEY."
+fi
+
 # Directory containing volume data
 [ "${EUID:-$(id -u)}" -eq 0 ] \
     && NMDIR=/var/lib/netmaker \
@@ -56,7 +85,7 @@ if [ "$RUNTIME" = "podman" ]; then
         -v netmaker-certs:/etc/netmaker \
         -e SERVER_NAME=broker.$DOMAIN \
         -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
-        -e MASTER_KEY=TODO_REPLACE_MASTER_KEY \
+        -e MASTER_KEY=$MASTER_KEY \
         -e DATABASE=sqlite \
         -e NODE_ID=netmaker-server \
         -e MQ_HOST=localhost \
@@ -80,7 +109,7 @@ else
         -v netmaker-certs:/etc/netmaker \
         -e SERVER_NAME=broker.$DOMAIN \
         -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
-        -e MASTER_KEY=TODO_REPLACE_MASTER_KEY \
+        -e MASTER_KEY=$MASTER_KEY \
         -e DATABASE=sqlite \
         -e NODE_ID=netmaker-server \
         -e MQ_HOST=localhost \
