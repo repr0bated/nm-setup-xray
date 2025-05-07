@@ -1,343 +1,94 @@
 #!/bin/bash
 set -e
 
-# Arguments
-DOMAIN=$1
-[ -z "$DOMAIN" ] && echo "Usage: $0 <domain>" && exit 1
+# This script sets up the Netmaker environment using Docker Compose or Podman Compose.
 
-SERVER_PORT=${2:-8081}
-BROKER_PORT=${3:-8883}
-DASHBOARD_PORT=${4:-8080}
+# --- Preliminary Cleanup (Best effort for old scripted setup) ---
+echo "Attempting to clean up entities from any previous non-Compose setup..."
 
-# Run preparation script first to ensure all files are in place
-echo "Running preparation script..."
-./nm-prepare.sh $DOMAIN
-
-# Handle Master Key
-MASTER_KEY_PLACEHOLDER="TODO_REPLACE_MASTER_KEY"
-CURRENT_MASTER_KEY="${NM_MASTER_KEY:-$MASTER_KEY_PLACEHOLDER}" # Read from env var NM_MASTER_KEY, fallback to placeholder
-
-if [ "$CURRENT_MASTER_KEY" = "$MASTER_KEY_PLACEHOLDER" ]; then
-  echo "WARNING: The default Netmaker MASTER_KEY is insecure or not set."
-  echo "You can set it permanently by exporting NM_MASTER_KEY in your shell environment."
-  read -p "Enter a new MASTER_KEY (at least 16 chars, leave blank to auto-generate): " user_master_key
-  if [ -n "$user_master_key" ]; then
-    if [ "${#user_master_key}" -lt 16 ]; then
-      echo "Error: MASTER_KEY must be at least 16 characters long." 
-      exit 1
-    fi
-    MASTER_KEY="$user_master_key"
-    echo "Using user-provided MASTER_KEY."
-  else
-    MASTER_KEY=$(openssl rand -hex 32) # Generate a 64-character hex key
-    echo "Auto-generated a new MASTER_KEY."
-  fi
-  echo "----------------------------------------------------------------------"
-  echo "IMPORTANT: Your Netmaker MASTER_KEY is: $MASTER_KEY"
-  echo "Please SAVE THIS KEY in a secure location. It is crucial for server"
-  echo "recovery or if you need to redeploy your Netmaker server."
-  echo "----------------------------------------------------------------------"
-else
-  MASTER_KEY="$CURRENT_MASTER_KEY"
-  echo "Using MASTER_KEY from environment variable NM_MASTER_KEY."
+# Detect runtime for cleanup, default to docker if neither specifically found
+CLEANUP_RUNTIME="docker"
+if command -v podman >/dev/null 2>&1; then
+    CLEANUP_RUNTIME="podman"
+elif command -v docker >/dev/null 2>&1; then
+    CLEANUP_RUNTIME="docker"
 fi
 
-# Directory containing volume data
-[ "${EUID:-$(id -u)}" -eq 0 ] \
-    && NMDIR=/var/lib/netmaker \
-    || NMDIR=$HOME/.local/share/netmaker
+if [ "$CLEANUP_RUNTIME" = "podman" ]; then
+    echo "Cleaning up old Podman resources..."
+    podman pod rm -f netmaker || true
+    # Individual containers (if not in pod) - less likely with old scripts but good to check
+    for container_name in netmaker-server netmaker-mq netmaker-ui netmaker-proxy netmaker-xray netclient; do
+      podman rm -f "$(podman ps -aq --filter name=^${container_name})" || true
+    done
+else # Docker or default
+    echo "Cleaning up old Docker resources..."
+    for container_name in netmaker-server netmaker-mq netmaker-ui netmaker-proxy netmaker-xray netclient; do
+      docker rm -f "$(docker ps -aq --filter name=^${container_name})" || true
+    done
+fi
 
-# Create state directory if not exists
-[ ! -d $NMDIR ] && mkdir -p $NMDIR
+# Common volumes from old script (best effort, names might vary if user changed them)
+for volume_name in netmaker-data netmaker-certs netmaker-mq-data netmaker-mq-logs; do
+  $CLEANUP_RUNTIME volume rm -f "$volume_name" || true
+done
+echo "Preliminary cleanup attempt finished."
 
-# Detect container runtime
-if command -v docker >/dev/null 2>&1; then
-    RUNTIME="docker"
-elif command -v podman >/dev/null 2>&1; then
-    RUNTIME="podman"
+# --- End Preliminary Cleanup ---
+
+SCRIPT_DIR_SETUP=$(dirname "$0")
+
+# 1. Run preparation script to create .env, configs, and certs
+echo "Running preparation script..."
+if [ -f "$SCRIPT_DIR_SETUP/nm-prepare.sh" ]; then
+    # Pass current environment variables, so NM_DOMAIN and NM_MASTER_KEY can be used if set
+    env NM_DOMAIN="$NM_DOMAIN" NM_MASTER_KEY="$NM_MASTER_KEY" bash "$SCRIPT_DIR_SETUP/nm-prepare.sh"
 else
-    echo "Error: Neither Docker nor Podman is installed."
+    echo "Error: nm-prepare.sh not found in $SCRIPT_DIR_SETUP. Cannot proceed." >&2
     exit 1
 fi
 
-echo "Using $RUNTIME for deployment..."
-
-# Create empty pod if using podman
-if [ "$RUNTIME" = "podman" ]; then
-    echo "Creating netmaker pod ..."
-    podman pod create -n netmaker \
-        -p $SERVER_PORT:8443 \
-        -p $BROKER_PORT:8883 \
-        -p $DASHBOARD_PORT:8080 \
-        -p 443:443 \
-        -p 51821-51830:51821-51830/udp
-fi
-
-#
-# Server
-#
-
-# Launch server
-echo "Creating netmaker-server container ..."
-if [ "$RUNTIME" = "podman" ]; then
-    podman run -d --pod netmaker --name netmaker-server \
-        -v netmaker-data:/root/data \
-        -v netmaker-certs:/etc/netmaker \
-        -e SERVER_NAME=broker.$DOMAIN \
-        -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
-        -e MASTER_KEY=$MASTER_KEY \
-        -e DATABASE=sqlite \
-        -e NODE_ID=netmaker-server \
-        -e MQ_HOST=localhost \
-        -e MQ_PORT=$BROKER_PORT \
-        -e TELEMETRY=off \
-        -e VERBOSITY="3" \
-        --cap-add NET_ADMIN \
-        --cap-add NET_RAW \
-        --cap-add SYS_MODULE \
-        --restart unless-stopped \
-        docker.io/gravitl/netmaker:latest
+# Source .env file to get variables for messages, though compose will use it directly
+if [ -f .env ]; then
+    echo "Loading environment variables from .env file..."
+    set -o allexport; source .env; set +o allexport
 else
-    # Docker version
-    $RUNTIME run -d --name netmaker-server \
-        -p $SERVER_PORT:8443 \
-        -v netmaker-data:/root/data \
-        -v netmaker-certs:/etc/netmaker \
-        -e SERVER_NAME=broker.$DOMAIN \
-        -e SERVER_API_CONN_STRING=api.$DOMAIN:$SERVER_PORT \
-        -e MASTER_KEY=$MASTER_KEY \
-        -e DATABASE=sqlite \
-        -e NODE_ID=netmaker-server \
-        -e MQ_HOST=localhost \
-        -e MQ_PORT=$BROKER_PORT \
-        -e TELEMETRY=off \
-        -e VERBOSITY="3" \
-        --cap-add NET_ADMIN \
-        --cap-add NET_RAW \
-        --cap-add SYS_MODULE \
-        --restart unless-stopped \
-        --network host \
-        docker.io/gravitl/netmaker:latest
+    echo "Warning: .env file not found. Compose might fail or use defaults."
 fi
 
-#
-# Broker
-#
-
-# Prepare broker configuration
-[ ! -f $NMDIR/mosquitto.conf ] && cat << EOF > $NMDIR/mosquitto.conf
-per_listener_settings true
-
-listener 8883
-allow_anonymous false
-require_certificate true
-use_identity_as_username true
-cafile /mosquitto/certs/root.pem
-certfile /mosquitto/certs/server.pem
-keyfile /mosquitto/certs/server.key
-
-listener 1883
-allow_anonymous true
-EOF
-
-# Launch broker
-echo "Creating netmaker-mq container ..."
-if [ "$RUNTIME" = "podman" ]; then
-    podman run -d --pod netmaker --name netmaker-mq \
-        -v $NMDIR/mosquitto.conf:/mosquitto/config/mosquitto.conf \
-        -v netmaker-mq-data:/mosquitto/data \
-        -v netmaker-mq-logs:/mosquitto/log \
-        -v netmaker-certs:/mosquitto/certs \
-        --restart unless-stopped \
-        docker.io/eclipse-mosquitto:2.0-openssl
+# 2. Detect Compose tool
+COMPOSE_CMD=""
+if command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD="docker-compose"
+elif command -v podman-compose >/dev/null 2>&1; then
+    COMPOSE_CMD="podman-compose"
 else
-    # Docker version
-    $RUNTIME run -d --name netmaker-mq \
-        -p $BROKER_PORT:8883 \
-        -v $NMDIR/mosquitto.conf:/mosquitto/config/mosquitto.conf \
-        -v netmaker-mq-data:/mosquitto/data \
-        -v netmaker-mq-logs:/mosquitto/log \
-        -v netmaker-certs:/mosquitto/certs \
-        --restart unless-stopped \
-        docker.io/eclipse-mosquitto:2.0-openssl
+    echo "Error: Neither docker-compose nor podman-compose found. Please install one to proceed." >&2
+    exit 1
 fi
 
-#
-# UI
-#
+echo "Using $COMPOSE_CMD for deployment..."
 
-# Launch ui
-echo "Creating netmaker-ui container ..."
-if [ "$RUNTIME" = "podman" ]; then
-    podman run -d --pod netmaker --name netmaker-ui \
-        -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
-        --restart unless-stopped \
-        docker.io/gravitl/netmaker-ui:latest
-else
-    # Docker version
-    $RUNTIME run -d --name netmaker-ui \
-        -p $DASHBOARD_PORT:80 \
-        -e BACKEND_URL=https://api.$DOMAIN:$SERVER_PORT \
-        --restart unless-stopped \
-        docker.io/gravitl/netmaker-ui:latest
-fi
-
-#
-# Reverse Proxy
-#
-
-# Prepare reverse proxy certificates
-if [ ! -f $NMDIR/selfsigned.key ]; then
-    echo "Creating netmaker-proxy tls certificates ..."
-    openssl req -x509 \
-        -newkey rsa:4096 -sha256 \
-        -days 3650 -nodes \
-        -keyout $NMDIR/selfsigned.key \
-        -out $NMDIR/selfsigned.crt \
-        -subj "/CN=$DOMAIN" \
-        -addext "subjectAltName=DNS:$DOMAIN,DNS:*.$DOMAIN"
-fi
-
-# Prepare reverse proxy configuration
-[ ! -f $NMDIR/nginx.conf ] && cat << EOF > $NMDIR/nginx.conf
-user  nginx;
-worker_processes  auto;
-
-error_log  /var/log/nginx/error.log notice;
-pid        /var/run/nginx.pid;
-
-events {
-    worker_connections  1024;
-}
-
-http {
-    include       /etc/nginx/mime.types;
-    default_type  application/octet-stream;
-
-    log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '
-                      '\$status \$body_bytes_sent "\$http_referer" '
-                      '"\$http_user_agent" "\$http_x_forwarded_for"';
-
-    access_log    /var/log/nginx/access.log  main;
-
-    sendfile        on;
-    #tcp_nopush     on;
-
-    keepalive_timeout  65;
-
-    #gzip  on;
-
-    server {
-        listen       8443 ssl;
-        server_name api.$DOMAIN;
-
-        #access_log  /var/log/nginx/host.access.log  main;
-
-        ssl_certificate /etc/nginx/ssl/selfsigned.crt;
-        ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
-
-        location / {
-            proxy_pass   http://127.0.0.1:8081;
-        }
-
-        #error_page  404              /404.html;
-
-        # Redirect server error pages to the static page /50x.html
-        error_page   500 502 503 504  /50x.html;
-        location = /50x.html {
-            root   /usr/share/nginx/html;
-        }
-    }
-
-    server {
-        listen       8080 ssl;
-        server_name dashboard.$DOMAIN;
-
-        #access_log  /var/log/nginx/host.access.log  main;
-
-        ssl_certificate /etc/nginx/ssl/selfsigned.crt;
-        ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
-
-        location / {
-            proxy_pass   http://127.0.0.1:80;
-        }
-
-        #error_page  404              /404.html;
-
-        # Redirect server error pages to the static page /50x.html
-        error_page   500 502 503 504  /50x.html;
-        location = /50x.html {
-            root   /usr/share/nginx/html;
-        }
-    }
-}
-EOF
-
-# Launch reverse proxy
-echo "Creating netmaker-proxy container ..."
-if [ "$RUNTIME" = "podman" ]; then
-    podman run -d --pod netmaker --name netmaker-proxy \
-        -v $NMDIR/nginx.conf:/etc/nginx/nginx.conf:ro \
-        -v $NMDIR/selfsigned.key:/etc/nginx/ssl/selfsigned.key \
-        -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
-        --restart unless-stopped \
-        docker.io/nginx:latest
-else
-    # Docker version
-    $RUNTIME run -d --name netmaker-proxy \
-        -p 8443:8443 \
-        -p 8080:8080 \
-        -v $NMDIR/nginx.conf:/etc/nginx/nginx.conf:ro \
-        -v $NMDIR/selfsigned.key:/etc/nginx/ssl/selfsigned.key \
-        -v $NMDIR/selfsigned.crt:/etc/nginx/ssl/selfsigned.crt \
-        --restart unless-stopped \
-        --network host \
-        docker.io/nginx:latest
-fi
-
-#
-# Xray
-#
-
-# Launch xray
-echo "Creating netmaker-xray container ..."
-if [ "$RUNTIME" = "podman" ]; then
-    # Using podman with netmaker pod
-    podman run -d --pod netmaker --name netmaker-xray \
-        -v $NMDIR/xray/config.json:/etc/xray/config.json \
-        -v $NMDIR/xray/ssl:/etc/xray/ssl \
-        --restart unless-stopped \
-        ghcr.io/xtls/xray-core:sha-59aa5e1-ls
-else
-    # Docker version
-    $RUNTIME run -d --name netmaker-xray \
-        -p 443:443 \
-        -v $NMDIR/xray/config.json:/etc/xray/config.json \
-        -v $NMDIR/xray/ssl:/etc/xray/ssl \
-        --restart unless-stopped \
-        ghcr.io/xtls/xray-core:sha-59aa5e1-ls
-fi
-
-echo "Setup complete! Netmaker is running with Xray on port 443."
-
-# Attempt to run nm-persist.sh for persistence
-echo ""
-echo "Attempting to set up persistence for Netmaker services..."
-SCRIPT_DIR_FOR_PERSIST=$(dirname "$0") # Get directory of nm-setup.sh
-
-if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-    echo "Running as root, proceeding with nm-persist.sh..."
-    if [ -f "$SCRIPT_DIR_FOR_PERSIST/nm-persist.sh" ]; then
-        "$SCRIPT_DIR_FOR_PERSIST/nm-persist.sh"
-        echo "Persistence setup attempted."
-    else
-        echo "WARNING: nm-persist.sh not found in $SCRIPT_DIR_FOR_PERSIST. Skipping persistence setup."
-    fi
-else
-    echo "INFO: Not running as root. Persistence setup (nm-persist.sh) was not run automatically."
-    echo "If you want services to start automatically on boot, please run manually:"
-    echo "  sudo $SCRIPT_DIR_FOR_PERSIST/nm-persist.sh"
-fi
+# 3. Run Compose up
+# Assumes docker-compose.yml is in the current directory (root of the project)
+echo "Starting services with $COMPOSE_CMD up -d..."
+$COMPOSE_CMD -f docker-compose.yml up -d
 
 echo ""
-echo "Visit https://github.com/$REPO_USER/$REPO_NAME for more information and next steps."
+echo "Netmaker services started via $COMPOSE_CMD."
+echo "Check service status with: $COMPOSE_CMD ps"
+echo "View logs with: $COMPOSE_CMD logs -f [service_name]"
+echo ""
+echo "Ensure your DNS (api.$DOMAIN, dashboard.$DOMAIN, etc.) points to this host."
+
+# Persistence:
+# For Docker: restart policies in docker-compose.yml handle this.
+# For Podman: user can run 'podman-compose up --systemd' or generate systemd units via 'podman generate systemd ...' for the pod/containers if podman-compose creates them that way.
+# This script will not automatically set up systemd units for compose for now.
+# The old nm-persist.sh is not compatible with a compose setup directly.
+
+echo "For persistence with Podman, you might need to generate systemd units manually"
+echo "after services are up, or use podman-compose features for systemd integration."
+echo "For Docker, restart policies in docker-compose.yml should handle service restarts."
+
+echo "Visit https://github.com/${GITHUB_REPO_USER:-repr0bated}/${GITHUB_REPO_NAME:-nm-setup-xray} for more information."
