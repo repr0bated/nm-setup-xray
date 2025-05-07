@@ -95,10 +95,6 @@ if [ "$RUNTIME" = "podman" ]; then
         --cap-add NET_ADMIN \
         --cap-add NET_RAW \
         --cap-add SYS_MODULE \
-        --sysctl net.ipv4.ip_forward=1 \
-        --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-        --sysctl net.ipv6.conf.all.disable_ipv6=0 \
-        --sysctl net.ipv6.conf.all.forwarding=1 \
         --restart unless-stopped \
         docker.io/gravitl/netmaker:latest
 else
@@ -119,10 +115,6 @@ else
         --cap-add NET_ADMIN \
         --cap-add NET_RAW \
         --cap-add SYS_MODULE \
-        --sysctl net.ipv4.ip_forward=1 \
-        --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-        --sysctl net.ipv6.conf.all.disable_ipv6=0 \
-        --sysctl net.ipv6.conf.all.forwarding=1 \
         --restart unless-stopped \
         --network host \
         docker.io/gravitl/netmaker:latest
