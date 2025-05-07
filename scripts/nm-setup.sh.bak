@@ -21,46 +21,10 @@ echo "Running preparation script..."
 # Create state directory if not exists
 [ ! -d $NMDIR ] && mkdir -p $NMDIR
 
-# Detect if podman-compose or docker-compose is available
-COMPOSE_CMD=""
-if command -v podman-compose >/dev/null 2>&1; then
-    COMPOSE_CMD="podman-compose"
-    echo "Found podman-compose, using it for deployment..."
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_CMD="docker-compose"
-    echo "Found docker-compose, using it for deployment..."
-fi
-
-if [ -n "$COMPOSE_CMD" ] && [ -f "$NMDIR/config/docker-compose.yml" ]; then
-    echo "Using $COMPOSE_CMD with configuration in $NMDIR/config/docker-compose.yml"
-    
-    # Set current working directory to where the compose file is located
-    pushd "$NMDIR/config" > /dev/null
-    
-    # Run the compose command
-    $COMPOSE_CMD up -d
-    
-    # Return to the original directory
-    popd > /dev/null
-    
-    echo "Setup complete! Netmaker is running with Xray on port 443."
-    exit 0
-fi
-
-# Fallback to traditional container setup if compose isn't available
-echo "Compose tool not found or docker-compose.yml not available."
-echo "Falling back to direct container setup..."
-
 # Detect container runtime
 if command -v docker >/dev/null 2>&1; then
     RUNTIME="docker"
 elif command -v podman >/dev/null 2>&1; then
-    RUNTIME="podman"
-else
-    echo "Error: Neither Docker nor Podman is installed."
-    exit 1
-fi
-
     RUNTIME="podman"
 else
     echo "Error: Neither Docker nor Podman is installed."
