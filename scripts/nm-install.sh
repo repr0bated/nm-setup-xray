@@ -26,11 +26,19 @@ trap 'rm -rf $TMP_DIR' EXIT
 echo "Installing Netmaker with Xray using scripts from $REPO_USER/$REPO_NAME..."
 
 # Download required scripts to temporary directory
-echo "Downloading scripts..."
+echo "Downloading scripts into $TMP_DIR..."
 for script in nm-prepare.sh nm-setup.sh nm-join.sh nm-persist.sh nm-routes.sh nm-cleanup.sh; do
+    echo "Downloading $script..."
     curl -sfL "$BASE_URL/$script" -o "$TMP_DIR/$script"
+    if [ ! -f "$TMP_DIR/$script" ]; then
+        echo "ERROR: Failed to download $script from $BASE_URL/$script" >&2
+        exit 1
+    fi
     chmod +x "$TMP_DIR/$script"
 done
+
+echo "Downloaded scripts:
+ls -l $TMP_DIR"
 
 # Change to the temporary directory to ensure relative paths work
 cd "$TMP_DIR"
