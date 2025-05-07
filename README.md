@@ -73,6 +73,65 @@ curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/script
    sudo ./scripts/nm-persist.sh
    ```
 
+## Xray Configuration
+
+Xray is configured to run on port 443 with TLS. All configuration files are stored on the host and mounted into the container, making them easily editable.
+
+### Configuration Files Location
+
+The Xray configuration files are stored in:
+- `/var/lib/netmaker/xray/` (if running as root)
+- `$HOME/.local/share/netmaker/xray/` (if running as a regular user)
+
+Key files:
+- `config.json` - Main Xray configuration file
+- `ssl/` - Directory containing SSL certificates
+  - `server.key` - Private key
+  - `server.crt` - Certificate
+
+### Editing the Xray Configuration
+
+To modify the Xray configuration, edit the `config.json` file in the Xray directory:
+
+```bash
+# If running as root
+sudo nano /var/lib/netmaker/xray/config.json
+
+# If running as a regular user
+nano $HOME/.local/share/netmaker/xray/config.json
+```
+
+After editing the configuration, restart the Xray container to apply changes:
+
+```bash
+# If using Docker
+docker restart netmaker-xray
+
+# If using Podman
+podman restart netmaker-xray
+```
+
+### Default Xray Configuration
+
+The default Xray configuration uses VLESS protocol with TLS. The client ID is automatically generated during installation.
+
+To add additional clients, edit the `config.json` file and add entries to the `clients` array:
+
+```json
+"clients": [
+  {
+    "id": "existing-uuid",
+    "flow": "xtls-rprx-direct"
+  },
+  {
+    "id": "new-uuid-for-another-client",
+    "flow": "xtls-rprx-direct"
+  }
+]
+```
+
+You can generate new UUIDs with the `uuidgen` command.
+
 ## Script Descriptions
 
 - **nm-install.sh**: All-in-one installation script (for curl installation)
