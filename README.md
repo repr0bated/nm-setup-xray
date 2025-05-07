@@ -20,6 +20,28 @@ curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/script
 
 Replace `<DOMAIN>` with your domain name.
 
+## Installation Commands
+
+Setup netmaker server with Xray for your domain:
+```
+curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/scripts/nm-install.sh | sudo bash -s - yourdomain.com
+```
+
+Join a netmaker network with access TOKEN:
+```
+curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/scripts/nm-join.sh | sudo bash -s - <TOKEN>
+```
+
+Set up persistence for containers:
+```
+curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/scripts/nm-persist.sh | sudo bash -s -
+```
+
+Sync routes from containers to host:
+```
+curl -sfL https://raw.githubusercontent.com/repr0bated/nm-setup-xray/main/scripts/nm-routes.sh | sudo bash -s -
+```
+
 ## Manual Installation
 
 ### Prerequisites
