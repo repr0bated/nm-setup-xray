@@ -319,3 +319,25 @@ else
 fi
 
 echo "Setup complete! Netmaker is running with Xray on port 443."
+
+# Attempt to run nm-persist.sh for persistence
+echo ""
+echo "Attempting to set up persistence for Netmaker services..."
+SCRIPT_DIR_FOR_PERSIST=$(dirname "$0") # Get directory of nm-setup.sh
+
+if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    echo "Running as root, proceeding with nm-persist.sh..."
+    if [ -f "$SCRIPT_DIR_FOR_PERSIST/nm-persist.sh" ]; then
+        "$SCRIPT_DIR_FOR_PERSIST/nm-persist.sh"
+        echo "Persistence setup attempted."
+    else
+        echo "WARNING: nm-persist.sh not found in $SCRIPT_DIR_FOR_PERSIST. Skipping persistence setup."
+    fi
+else
+    echo "INFO: Not running as root. Persistence setup (nm-persist.sh) was not run automatically."
+    echo "If you want services to start automatically on boot, please run manually:"
+    echo "  sudo $SCRIPT_DIR_FOR_PERSIST/nm-persist.sh"
+fi
+
+echo ""
+echo "Visit https://github.com/$REPO_USER/$REPO_NAME for more information and next steps."
