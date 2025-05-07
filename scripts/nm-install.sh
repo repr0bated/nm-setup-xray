@@ -32,13 +32,20 @@ for script in nm-prepare.sh nm-setup.sh nm-join.sh nm-persist.sh nm-routes.sh nm
     chmod +x "$TMP_DIR/$script"
 done
 
+# Change to the temporary directory to ensure relative paths work
+cd "$TMP_DIR"
+
 # Run preparation script
 echo "Running preparation script..."
-"$TMP_DIR/nm-prepare.sh" "$DOMAIN"
+# Now that we are in TMP_DIR, ./nm-prepare.sh should work
+./nm-prepare.sh "$DOMAIN"
 
 # Run setup script
 echo "Running setup script..."
-"$TMP_DIR/nm-setup.sh" "$DOMAIN" "$SERVER_PORT" "$BROKER_PORT" "$DASHBOARD_PORT"
+# Similarly, ./nm-setup.sh should work
+./nm-setup.sh "$DOMAIN" "$SERVER_PORT" "$BROKER_PORT" "$DASHBOARD_PORT"
+
+cd -
 
 echo "Installation complete!"
 echo ""
