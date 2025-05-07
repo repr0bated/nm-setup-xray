@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# This script sets up the Netmaker environment using Docker Compose or Podman Compose.
+# This script sets up the Netmaker environment using Podman Compose or Docker Compose.
 
 # --- Preliminary Cleanup (Best effort for old scripted setup) ---
 echo "Attempting to clean up entities from any previous non-Compose setup..."

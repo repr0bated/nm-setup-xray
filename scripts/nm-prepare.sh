@@ -5,8 +5,8 @@ RUNTIME=${RUNTIME:-podman}  # Set default runtime to podman if not already set
 # This script prepares the host environment for the Docker Compose setup.
 # It creates configuration files and an .env file.
 
-# Configuration base directory relative to where docker-compose.yml is expected to be.
-# Assumes this script is run from the root of the project, same as docker-compose.yml
+# Configuration base directory relative to where compose.yml is expected to be.
+# Assumes this script is run from the root of the project, same as compose.yml
 CONFIG_DIR="./config"
 ENV_FILE=".env"
 
@@ -59,7 +59,7 @@ cat > "$ENV_FILE" << EOF
 DOMAIN=$DOMAIN
 MASTER_KEY=$MASTER_KEY
 
-# Default ports (can be overridden here or by docker-compose --env-file)
+# Default ports (can be overridden here or by compose --env-file)
 SERVER_PORT_INTERNAL=8081
 SERVER_HTTPS_PORT=8443
 DASHBOARD_HTTPS_PORT=8080
@@ -72,7 +72,7 @@ NETMAKER_UI_VERSION=latest
 NGINX_VERSION=latest
 XRAY_VERSION=sha-59aa5e1-ls
 EOF
-echo ".env file created. You can customize ports/versions in this file before running 'docker-compose up'."
+echo ".env file created. You can customize ports/versions in this file before running 'podman-compose up' or 'docker-compose up'."
 
 # --- Create configuration directories ---
 echo "Creating host directories for configuration files under $CONFIG_DIR..."
@@ -87,7 +87,7 @@ rm -f "$CONFIG_DIR/xray/config.json"
 if [ ! -f "$XRAY_CONFIG_FILE_TOML" ]; then
     echo "Creating Xray TOML configuration: $XRAY_CONFIG_FILE_TOML..."
     XRAY_CLIENT_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
-    # Note: XRAY_PORT from .env is for docker-compose port mapping.
+    # Note: XRAY_PORT from .env is for container-compose port mapping.
     # Xray itself reads the port from its config or defaults to what its VLESS settings imply (usually 443 for TLS).
     # Here, we explicitly set the listen port in the TOML to 443 for clarity.
     cat << EOF > "$XRAY_CONFIG_FILE_TOML"
@@ -271,4 +271,4 @@ $RUNTIME pull docker.io/nginx:latest
 
 echo "Preparation complete. Host directories and configuration files are ready under $CONFIG_DIR."
 echo "The .env file has been created/updated with your domain and master key."
-echo "You can now run 'docker-compose up -d' or 'podman-compose up -d'." 
+echo "You can now run 'podman-compose up -d' or 'docker-compose up -d'." 
