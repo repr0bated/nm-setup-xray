@@ -69,37 +69,6 @@ fi
 
 echo "Using $RUNTIME for deployment..."
 
-# Check for compose tools
-COMPOSE_CMD=""
-if command -v podman-compose >/dev/null 2>&1; then
-    COMPOSE_CMD="podman-compose"
-    echo "Found podman-compose, using it for deployment..."
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_CMD="docker-compose"
-    echo "Found docker-compose, using it for deployment..."
-fi
-
-# Debug info - print current directory and check for docker-compose files
-echo "Current directory: $(pwd)"
-echo "NMDIR is set to: $NMDIR"
-
-if [ -n "$COMPOSE_CMD" ] && [ -f "$NMDIR/config/docker-compose.yml" ]; then
-    echo "Using $COMPOSE_CMD with configuration in $NMDIR/config/docker-compose.yml"
-    
-    # Change to the config directory
-    cd "$NMDIR/config"
-    
-    # Run the compose command
-    echo "Running: $COMPOSE_CMD -f docker-compose.yml up -d"
-    $COMPOSE_CMD -f docker-compose.yml up -d
-    
-    # Return to the original directory
-    cd - > /dev/null
-    
-    echo "Setup complete! Netmaker is running with Xray on port 443."
-    exit 0
-fi
-
 # Create empty pod if using podman
 if [ "$RUNTIME" = "podman" ]; then
     echo "Creating netmaker pod ..."

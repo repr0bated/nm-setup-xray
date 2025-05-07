@@ -40,48 +40,36 @@ $RUNTIME volume create netmaker-mq-data || true
 $RUNTIME volume create netmaker-mq-logs || true
 
 # Create xray configuration if it doesn't exist
-if [ ! -f $NMDIR/xray/config.json ]; then
-    echo "Creating Xray configuration..."
-    cat << EOF > $NMDIR/xray/config.json
-{
-  "log": {
-    "loglevel": "warning"
-  },
-  "inbounds": [
-    {
-      "port": 443,
-      "protocol": "vless",
-      "settings": {
-        "clients": [
-          {
-            "id": "$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)",
-            "flow": "xtls-rprx-direct"
-          }
-        ],
-        "decryption": "none",
-        "fallbacks": []
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "alpn": ["http/1.1"],
-          "certificates": [
-            {
-              "certificateFile": "/etc/xray/ssl/server.crt",
-              "keyFile": "/etc/xray/ssl/server.key"
-            }
-          ]
-        }
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom"
-    }
-  ]
-}
+if [ ! -f $NMDIR/xray/config.toml ]; then
+    echo "Creating Xray configuration in TOML format..."
+    cat << EOF > $NMDIR/xray/config.toml
+# Xray Configuration in TOML format
+
+# Log settings
+[log]
+loglevel = "warning"
+
+# Inbound configurations
+[[inbounds]]
+port = 443
+protocol = "vless"
+  [inbounds.settings]
+  decryption = "none"
+    [[inbounds.settings.clients]]
+    id = "$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
+    flow = "xtls-rprx-direct"
+  [inbounds.streamSettings]
+  network = "tcp"
+  security = "tls"
+    [inbounds.streamSettings.tlsSettings]
+    alpn = ["http/1.1"]
+      [[inbounds.streamSettings.tlsSettings.certificates]]
+      certificateFile = "/etc/xray/ssl/server.crt"
+      keyFile = "/etc/xray/ssl/server.key"
+
+# Outbound configurations
+[[outbounds]]
+protocol = "freedom"
 EOF
 fi
 
@@ -303,7 +291,7 @@ services:
     container_name: netmaker-xray
     restart: unless-stopped
     volumes:
-      - $NMDIR/xray/config.json:/etc/xray/config.json
+      - $NMDIR/xray/config.toml:/etc/xray/config.toml
       - $NMDIR/xray/ssl:/etc/xray/ssl
     ports:
       - "443:443"

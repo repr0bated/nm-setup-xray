@@ -13,47 +13,35 @@ DOMAIN=$1
 # Create state directory if not exists
 [ ! -d $NMDIR/xray ] && mkdir -p $NMDIR/xray
 
-# Xray configuration
-[ ! -f $NMDIR/xray/config.json ] && cat << EOF > $NMDIR/xray/config.json
-{
-  "log": {
-    "loglevel": "warning"
-  },
-  "inbounds": [
-    {
-      "port": 443,
-      "protocol": "vless",
-      "settings": {
-        "clients": [
-          {
-            "id": "$(uuidgen)",
-            "flow": "xtls-rprx-direct"
-          }
-        ],
-        "decryption": "none",
-        "fallbacks": []
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "alpn": ["http/1.1"],
-          "certificates": [
-            {
-              "certificateFile": "/etc/xray/ssl/server.crt",
-              "keyFile": "/etc/xray/ssl/server.key"
-            }
-          ]
-        }
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom"
-    }
-  ]
-}
+# Xray configuration in TOML format
+[ ! -f $NMDIR/xray/config.toml ] && cat << EOF > $NMDIR/xray/config.toml
+# Xray Configuration in TOML format
+
+# Log settings
+[log]
+loglevel = "warning"
+
+# Inbound configurations
+[[inbounds]]
+port = 443
+protocol = "vless"
+  [inbounds.settings]
+  decryption = "none"
+    [[inbounds.settings.clients]]
+    id = "$(uuidgen)"
+    flow = "xtls-rprx-direct"
+  [inbounds.streamSettings]
+  network = "tcp"
+  security = "tls"
+    [inbounds.streamSettings.tlsSettings]
+    alpn = ["http/1.1"]
+      [[inbounds.streamSettings.tlsSettings.certificates]]
+      certificateFile = "/etc/xray/ssl/server.crt"
+      keyFile = "/etc/xray/ssl/server.key"
+
+# Outbound configurations
+[[outbounds]]
+protocol = "freedom"
 EOF
 
 # Generate TLS certificates for Xray
@@ -88,7 +76,7 @@ $RUNTIME pull ghcr.io/xtls/xray-core:sha-59aa5e1-ls
 if [ "$RUNTIME" = "podman" ] && podman pod exists netmaker; then
     echo "Adding xray-core to the netmaker pod..."
     podman run -d --pod netmaker --name netmaker-xray \
-        -v $NMDIR/xray/config.json:/etc/xray/config.json \
+        -v $NMDIR/xray/config.toml:/etc/xray/config.toml \
         -v $NMDIR/xray/ssl:/etc/xray/ssl \
         -p 443:443 \
         --restart unless-stopped \
@@ -97,7 +85,7 @@ else
     # For Docker or standalone Podman
     echo "Creating standalone xray-core container..."
     $RUNTIME run -d --name netmaker-xray \
-        -v $NMDIR/xray/config.json:/etc/xray/config.json \
+        -v $NMDIR/xray/config.toml:/etc/xray/config.toml \
         -v $NMDIR/xray/ssl:/etc/xray/ssl \
         -p 443:443 \
         --restart unless-stopped \
@@ -105,5 +93,5 @@ else
 fi
 
 echo "Xray has been set up and is running on port 443."
-echo "Configuration file: $NMDIR/xray/config.json"
+echo "Configuration file: $NMDIR/xray/config.toml"
 echo "SSL certificates: $NMDIR/xray/ssl/" 
