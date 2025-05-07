@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+RUNTIME=${RUNTIME:-podman}  # Set default runtime to podman if not already set
 
 # This script prepares the host environment for the Docker Compose setup.
 # It creates configuration files and an .env file.
