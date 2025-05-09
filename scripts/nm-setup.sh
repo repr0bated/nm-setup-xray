@@ -7,17 +7,17 @@ set -x
 # --- Preliminary Cleanup (Best effort for old scripted setup) ---
 echo "Attempting to clean up entities from any previous non-Compose setup..."
 
-# Detect runtime for cleanup, default to docker if neither specifically found
+# Detect runtime for cleanup, default to podman if found
 CLEANUP_RUNTIME="podman"
 if command -v podman >/dev/null 2>&1; then
     CLEANUP_RUNTIME="podman"
 elif command -v docker >/dev/null 2>&1; then
-    CLEANUP_RUNTIME="podman"
+    CLEANUP_RUNTIME="docker"
 fi
 
 if [ "$CLEANUP_RUNTIME" = "podman" ]; then
     echo "Cleaning up old Podman resources..."
-    podman pod rm -f netmaker || true
+    podman pod rm -f netmaker-pod || true
     # Individual containers (if not in pod) - less likely with old scripts but good to check
     for container_name in netmaker-server netmaker-mq netmaker-ui netmaker-proxy netmaker-xray netclient; do
       podman rm -f "$(podman ps -aq --filter name=^${container_name})" || true
@@ -96,26 +96,35 @@ else
     echo "Warning: .env file not found. Compose might fail or use defaults."
 fi
 
-# 2. Detect Compose tool
+# 2. Detect Compose tool - prefer podman-compose if available
 COMPOSE_CMD=""
+COMPOSE_FILE="docker-compose.yml"
+COMPOSE_FILE="docker-compose.yml"
+
 if command -v podman-compose >/dev/null 2>&1; then
     COMPOSE_CMD="docker-compose"
+    # Use special podman-compose.yml file if it exists
+    if [ -f "$REPO_ROOT/podman-compose.yml" ]; then
+        COMPOSE_FILE="podman-compose.yml"
+    fi
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_CMD="docker-compose"
 else
-    echo "Error: Neither docker-compose nor podman-compose found. Please install one to proceed." >&2
+    echo "Error: Neither podman-compose nor docker-compose found. Please install one to proceed." >&2
     exit 1
 fi
 
-echo "Using $COMPOSE_CMD for deployment..."
+echo "Using $COMPOSE_CMD with $COMPOSE_FILE for deployment..."
 
 # 3. Run Compose up
-# Assumes docker-compose.yml is in the current directory (root of the project)
+# Ensure we're in the repository root with the docker-compose.yml
 cd "$REPO_ROOT"
 echo "Working directory: $(pwd)"
-echo "Checking for docker-compose.yml: $(ls -la docker-compose.yml || echo 'NOT FOUND')"
+echo "Checking for compose file: $(ls -la $COMPOSE_FILE || echo 'NOT FOUND')"
+
+# 3. Run Compose up with the correct compose file
 echo "Starting services with $COMPOSE_CMD up -d..."
-$COMPOSE_CMD -f docker-compose.yml up -d
+$COMPOSE_CMD -f $COMPOSE_FILE up -d
 
 echo ""
 echo "Netmaker services started via $COMPOSE_CMD."
@@ -125,13 +134,12 @@ echo ""
 echo "Ensure your DNS (api.$DOMAIN, dashboard.$DOMAIN, etc.) points to this host."
 
 # Persistence:
+# For podman, we should use systemd services or quadlet files for persistence
 if [ "$COMPOSE_CMD" = "podman-compose" ]; then
     echo "For persistence with Podman, you might need to generate systemd units manually"
     echo "after services are up, or use 'podman-compose up --systemd' for systemd integration."
 else
     echo "For Docker, restart policies in docker-compose.yml should handle service restarts."
 fi
-echo "after services are up, or use podman-compose features for systemd integration."
-echo "For Docker, restart policies in docker-compose.yml should handle service restarts."
 
 echo "Visit https://github.com/${GITHUB_REPO_USER:-repr0bated}/${GITHUB_REPO_NAME:-nm-setup-xray} for more information."

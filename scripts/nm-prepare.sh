@@ -261,7 +261,7 @@ if [ ! -f $NMDIR/selfsigned.key ]; then
         -addext "subjectAltName=DNS:$DOMAIN,DNS:*.$DOMAIN"
 fi
 
-# Pull necessary images
+# Pull necessary images - use the podman runtime
 echo "Pulling required container images..."
 $RUNTIME pull ghcr.io/xtls/xray-core:sha-59aa5e1-ls
 $RUNTIME pull docker.io/gravitl/netmaker:latest
@@ -269,6 +269,44 @@ $RUNTIME pull docker.io/gravitl/netmaker-ui:latest
 $RUNTIME pull docker.io/eclipse-mosquitto:2.0-openssl
 $RUNTIME pull docker.io/nginx:latest
 
+# --- Create symbolic links to compose files in the current directory ---
+SCRIPT_DIR=$(dirname "$0")
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+
+# Make sure compose files are accessible to the scripts
+if [ "$RUNTIME" = "podman" ]; then
+    echo "Using podman runtime, ensuring podman-compose.yml is accessible..."
+    if [ -f "$REPO_ROOT/podman-compose.yml" ]; then
+        echo "podman-compose.yml found in repository root: $REPO_ROOT/podman-compose.yml"
+        # Create symlink in current directory if needed
+        if [ "$(pwd)" != "$REPO_ROOT" ] && [ ! -f "podman-compose.yml" ]; then
+            echo "Creating symbolic link to podman-compose.yml in the current directory..."
+            ln -sf "$REPO_ROOT/podman-compose.yml" "podman-compose.yml"
+        fi
+    else
+        echo "Warning: podman-compose.yml not found in repository root: $REPO_ROOT"
+        echo "Will use docker-compose.yml instead, but it might not be optimized for podman."
+    fi
+fi
+
+if [ -f "$REPO_ROOT/docker-compose.yml" ]; then
+    echo "docker-compose.yml found in repository root: $REPO_ROOT/docker-compose.yml"
+    # Create symlink in current directory if needed
+    if [ "$(pwd)" != "$REPO_ROOT" ] && [ ! -f "docker-compose.yml" ]; then
+        echo "Creating symbolic link to docker-compose.yml in the current directory..."
+        ln -sf "$REPO_ROOT/docker-compose.yml" "docker-compose.yml"
+    fi
+else
+    echo "Error: docker-compose.yml not found in repository root: $REPO_ROOT"
+    exit 1
+fi
+
 echo "Preparation complete. Host directories and configuration files are ready under $CONFIG_DIR."
 echo "The .env file has been created/updated with your domain and master key."
-echo "You can now run 'podman-compose up -d' or 'docker-compose up -d'." 
+if [ "$RUNTIME" = "podman" ]; then
+    echo "You can now run 'podman-compose up -d'."
+else
+    echo "You can now run 'docker-compose up -d'."
+fi
+fi
+fi
